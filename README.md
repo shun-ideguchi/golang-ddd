@@ -2,3 +2,4 @@
 
 このリポジトリはDDDの概念をブランチごとに解説しています。
 - feature/value_object → 値オブジェクト
+- feature/entity → エンティティ
