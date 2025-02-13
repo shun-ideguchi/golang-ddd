@@ -119,5 +119,5 @@ func (u *User) Equals(other *User) bool {
 ```
 
 # サンプルコード
-値オブジェクト → /app/internal/domain/model/*
+値オブジェクト → /app/internal/domain/model/*   
 実行サンプル → /app/cmd/main.go
