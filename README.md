@@ -109,7 +109,7 @@ func (u *User) ChangeName(name string) error {
 退会
 ```
 上記のようなライフサイクルがある場合はエンティティとして定義する   
-- エンティティの比較処理は識別子のみでOK
+- エンティティの比較処理は識別子のみでOK   
 値オブジェクトの場合は全てのプロパティを比較し等価性を確認していたが、エンティティの場合等価保証するのは識別子になる
 ```go
 func (u *User) Equals(other *User) bool {
@@ -117,3 +117,7 @@ func (u *User) Equals(other *User) bool {
 	return reflect.DeepEqual(u.userID, other.userID)
 }
 ```
+
+# サンプルコード
+値オブジェクト → /app/internal/domain/model/*
+実行サンプル → /app/cmd/main.go
