@@ -6,4 +6,3 @@ type IUserRepository interface {
 	Find(userName string) (*user.User, error)
 	Save(user *user.User) error
 }
-
