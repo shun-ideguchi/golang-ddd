@@ -1,8 +1,11 @@
 package persistence
 
 import (
+	"fmt"
+
 	"github.com/shun-ideguchi/golang-ddd/internal/domain/model/user"
 	"github.com/shun-ideguchi/golang-ddd/internal/domain/repository"
+	"github.com/shun-ideguchi/golang-ddd/internal/infrastructure/data_model"
 )
 
 type userPersistence struct {
@@ -13,15 +16,24 @@ func NewUserPersistence() repository.IUserRepository {
 }
 
 func (p *userPersistence) Find(userName string) (*user.User, error) {
-	// 再構築処理
+	// DBから再構築したと仮定
+	target := data_model.User{
+		ID:   "uuid",
+		Name: userName,
+	}
 
-	// 仮モデル作成
-	user, _ := user.NewUser("uuid", "test name")
+	// データモデルからドメインモデルを生成
+	// ルールチェックを行わない理由はDBにはルールが適用された値が永続化されているため
+	// 開発者が手動で更新するケースはドメインルールに沿った値を永続化すると決める
+	user := user.ReNewUser(target.ID, target.Name)
 	return user, nil
 }
 
 func (p *userPersistence) Save(user *user.User) error {
+	data := data_model.ToUserDataModel(user)
+
 	// 永続化処理
+	fmt.Println(data)
 
 	return nil
 }

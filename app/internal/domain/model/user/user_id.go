@@ -19,3 +19,7 @@ func validateUserID(userID string) error {
 		validation.RuneLength(1, 31).Error("ユーザーIDは1~31文字以内で指定してください"),
 	)
 }
+
+func (u UserID) String() string {
+	return string(u)
+}
