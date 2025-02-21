@@ -3,23 +3,23 @@ package main
 import (
 	"fmt"
 
-	"github.com/shun-ideguchi/golang-ddd/internal/domain/user"
+	"github.com/shun-ideguchi/golang-ddd/internal/domain/model/user"
+	"github.com/shun-ideguchi/golang-ddd/internal/domain/service"
 )
 
 func main() {
-	user1, err := user.NewUser("uuid1234", "山田 太郎")
+	msg := "success"
+	userService := service.NewUserService()
+
+	user, err := user.NewUser("uuid", "test")
 	if err != nil {
-		fmt.Println("failed")
+		msg = "failed to initialize user model"
 	}
 
-	user2, err := user.NewUser("uuid123", "山田 太郎")
-	if err != nil {
-		fmt.Println("failed")
+	isExist := userService.IsExists(user)
+	if isExist {
+		msg = "duplicate user"
 	}
 
-	if user1.Equals(user2) {
-		fmt.Println("same object")
-	} else {
-		fmt.Println("not same object")
-	}
+	fmt.Println(msg)
 }
