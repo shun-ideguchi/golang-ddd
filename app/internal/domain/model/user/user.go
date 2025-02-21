@@ -39,3 +39,7 @@ func (u *User) Equals(other *User) bool {
 	// エンティティは同一性だけの比較で良い
 	return reflect.DeepEqual(u.userID, other.userID)
 }
+
+func (u *User) Name() *Name {
+	return &u.name
+}

@@ -19,3 +19,7 @@ func validateName(name string) error {
 		validation.RuneLength(3, 10).Error("名前は3~10文字以内で指定してください"),
 	)
 }
+
+func (n Name) String() string {
+	return string(n)
+}
