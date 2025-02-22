@@ -4,7 +4,7 @@ import validation "github.com/go-ozzo/ozzo-validation/v4"
 
 type UserID string
 
-func newUserID(userID string) (UserID, error) {
+func NewUserID(userID string) (UserID, error) {
 	if err := validateUserID(userID); err != nil {
 		return "", err
 	}
@@ -16,7 +16,7 @@ func newUserID(userID string) (UserID, error) {
 
 func validateUserID(userID string) error {
 	return validation.Validate(userID,
-		validation.RuneLength(1, 31).Error("ユーザーIDは1~31文字以内で指定してください"),
+		validation.RuneLength(1, 36).Error("ユーザーIDは1~36文字以内で指定してください"),
 	)
 }
 

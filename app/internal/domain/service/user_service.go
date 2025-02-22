@@ -5,17 +5,17 @@ import (
 	"github.com/shun-ideguchi/golang-ddd/internal/domain/repository"
 )
 
-type userService struct {
+type UserService struct {
 	userRepository repository.IUserRepository
 }
 
-func NewUserService(userRepository repository.IUserRepository) *userService {
-	return &userService{userRepository: userRepository}
+func NewUserService(userRepository repository.IUserRepository) *UserService {
+	return &UserService{userRepository: userRepository}
 }
 
-func (s *userService) IsExists(user *user.User) bool {
+func (s *UserService) IsExists(user *user.User) bool {
 	// 重複を確認する処理
-	found, err := s.userRepository.Find(user.Name().String())
+	found, err := s.userRepository.FindByName(user.Name().String())
 	if err != nil {
 		// errorを返すべきだが省略
 		return false
@@ -25,5 +25,7 @@ func (s *userService) IsExists(user *user.User) bool {
 		return false
 	}
 
-	return true
+	// 存在しない仮定で進めるため偽で返却
+	// return true
+	return false
 }

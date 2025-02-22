@@ -7,14 +7,19 @@ import (
 type User struct {
 	userID UserID
 	name   Name
+	email  Email
 }
 
-func NewUser(userID, name string) (*User, error) {
-	newUserID, err := newUserID(userID)
+func NewUser(userID, name, email string) (*User, error) {
+	newUserID, err := NewUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	newName, err := newName(name)
+	newName, err := NewName(name)
+	if err != nil {
+		return nil, err
+	}
+	newEmail, err := NewEmail(email)
 	if err != nil {
 		return nil, err
 	}
@@ -22,25 +27,24 @@ func NewUser(userID, name string) (*User, error) {
 	return &User{
 		userID: newUserID,
 		name:   newName,
+		email:  newEmail,
 	}, nil
 }
 
-func ReNewUser(ID, name string) *User {
+func ReNewUser(ID, name, email string) *User {
 	return &User{
 		userID: UserID(ID),
 		name:   Name(name),
+		email:  Email(email),
 	}
 }
 
-func (u *User) ChangeName(name string) error {
-	v, err := newName(name)
-	if err != nil {
-		return err
-	}
+func (u *User) ChangeName(name Name) {
+	u.name = name
+}
 
-	u.name = v
-
-	return nil
+func (u *User) ChangeEmail(email Email) {
+	u.email = email
 }
 
 func (u *User) Equals(other *User) bool {
@@ -54,4 +58,8 @@ func (u *User) ID() *UserID {
 
 func (u *User) Name() *Name {
 	return &u.name
+}
+
+func (u *User) Email() *Email {
+	return &u.email
 }

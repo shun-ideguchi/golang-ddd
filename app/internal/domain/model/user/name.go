@@ -4,7 +4,7 @@ import validation "github.com/go-ozzo/ozzo-validation/v4"
 
 type Name string
 
-func newName(name string) (Name, error) {
+func NewName(name string) (Name, error) {
 	if err := validateName(name); err != nil {
 		return "", err
 	}
@@ -16,7 +16,7 @@ func newName(name string) (Name, error) {
 
 func validateName(name string) error {
 	return validation.Validate(name,
-		validation.RuneLength(3, 10).Error("名前は3~10文字以内で指定してください"),
+		validation.RuneLength(3, 30).Error("名前は3~30文字以内で指定してください"),
 	)
 }
 
