@@ -10,18 +10,19 @@ import (
 )
 
 type createUsecase struct {
+	userFactory    user.IFactory
 	userRepository repository.IUserRepository
 	userService    service.UserService
 }
 
-func NewCreateUsecase(userRepository repository.IUserRepository, userService service.UserService) *createUsecase {
-	return &createUsecase{userRepository: userRepository, userService: userService}
+func NewCreateUsecase(userFactory user.IFactory, userRepository repository.IUserRepository, userService service.UserService) *createUsecase {
+	return &createUsecase{userFactory: userFactory, userRepository: userRepository, userService: userService}
 }
 
 func (u *createUsecase) Execute(cmd *command.CreateCommand) error {
-	user, err := user.NewUser(cmd.UserID, cmd.Name, cmd.Email)
+	user, err := u.userFactory.Create(cmd.Name, cmd.Email)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create user entity: %w", err)
 	}
 
 	if u.userService.IsExists(user) {

@@ -1,9 +1,5 @@
 package command
 
-import (
-	"github.com/google/uuid"
-)
-
 type CreateCommand struct {
 	UserID string
 	Name   string
@@ -12,8 +8,7 @@ type CreateCommand struct {
 
 func NewCreateCommand(name, email string) *CreateCommand {
 	return &CreateCommand{
-		UserID: uuid.NewString(),
-		Name:   name,
-		Email:  email,
+		Name:  name,
+		Email: email,
 	}
 }
