@@ -1,6 +1,7 @@
 FROM golang:1.22.4-bullseye
 
-ENV GO111MODULE=on
+ENV GO111MODULE=on \
+    GOTOOLCHAIN=auto
 
 WORKDIR /app
 
