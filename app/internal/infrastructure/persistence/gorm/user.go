@@ -1,4 +1,4 @@
-package persistence
+package gorm
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/shun-ideguchi/golang-ddd/internal/domain/model/user"
 	"github.com/shun-ideguchi/golang-ddd/internal/domain/repository"
-	"github.com/shun-ideguchi/golang-ddd/internal/infrastructure/data_model"
 )
 
 type userPersistence struct {
@@ -16,9 +15,21 @@ func NewUserPersistence() repository.IUserRepository {
 	return &userPersistence{}
 }
 
+func (p *userPersistence) FindByID(id user.UserID) (*user.User, error) {
+
+	target := User{
+		ID:    id.String(),
+		Name:  "test",
+		Email: "test@test.com",
+	}
+
+	user := user.ReNewUser(target.ID, target.Name, target.Email)
+	return user, nil
+}
+
 func (p *userPersistence) FindByName(userName string) (*user.User, error) {
 	// DBから再構築したと仮定
-	target := data_model.User{
+	target := User{
 		ID:    uuid.NewString(),
 		Name:  userName,
 		Email: "test@test.com",
@@ -32,7 +43,9 @@ func (p *userPersistence) FindByName(userName string) (*user.User, error) {
 }
 
 func (p *userPersistence) Save(user *user.User) error {
-	data := data_model.ToUserDataModel(user)
+	builder := &UserDataModelBuilder{}
+	user.Notify(builder)    // ← domainに「中身教えて」と依頼
+	data := builder.Build() // ← DBモデルに変換
 
 	// 永続化処理
 	fmt.Println(data)

@@ -1,312 +1,225 @@
-# ファクトリー
+# 集約 - ドメインのルールを守る
 
-### ファクトリーとは
-オブジェクトの生成処理を専門に担うドメインオブジェクト   
-生成ロジックが複雑な場合に、その知識をファクトリーに集約させることで呼び出し側の負担を軽減する
+## 漏れだしたルール
 
-### なぜファクトリーが必要か
-例えば、ユーザーの新規作成時にUUIDの採番が必要だとする   
-この採番ロジックをユースケース層に書いてしまうと、以下の問題が起きる
-- ID生成という技術的関心がユースケースに漏れ出す
-- 複数箇所でユーザーを生成する場合、採番ロジックが散らばる
-- 採番方式の変更時に複数箇所を修正する必要がある
+### 漏れだしたルールとは
+ドメインが本来守るべきルールがユースケース（アプリケーション層）に記述されてしまうことを「漏れだしたルール」と呼ぶ   
+漏れだしたルールは仕様変更時に修正箇所が散在し、保守コストを増大させる
 
-ファクトリーに生成ロジックを集約することで、呼び出し側は「名前」や「メールアドレス」などドメインに関連する値だけを渡せばよくなる
+### 具体例: サークルへの加入人数制限
+サークルには「30人まで加入できる」というドメインルールがある   
+このルールをユースケースに直接記述してしまうと以下のような問題が起きる
 
-## なぜDBの自動採番（AUTO_INCREMENT）ではなくアプリケーションで採番するのか
+↓ルールがユースケースに漏れだした悪い例
+```go
+// サークル加入ユースケース（悪い例）
+func (u *joinUsecase) Execute(cmd command.JoinCommand) error {
+    // ...（省略: メンバーとサークルの取得処理）
 
-MySQLなどのRDBには自動採番（AUTO_INCREMENT）機能があるが、エンティティの識別子にこれを採用するとオブジェクトが不安定になる
+    // ドメインルールがユースケースに漏れだしている
+    if len(circle.Members()) >= 29 {
+        return fmt.Errorf("circle is full")
+    }
+    circle.Members = append(circle.Members, member)
 
-### 永続化するまでIDが存在しない
+    return u.circleRepository.Save(circle)
+}
+```
 
-自動採番はINSERT時にDBが割り当てるため、インスタンス生成時点ではIDが存在しない   
-エンティティは識別子によって識別されるオブジェクトであるにもかかわらず、生成直後は「自分が何者か分からない」不完全な状態になる
+この書き方には以下の問題がある
+1. サークル加入に関するユースケースが複数存在する場合、全てのユースケースに同じルールを記述する必要がある
+2. 仕様変更（例: 上限を30人から50人に変更）が入った場合、全ユースケースを漏れなく修正する必要がある
+3. 「漏れなく」という慎重さを求める作業は開発者を疲弊させ、バグの温床になる
+
+### 解決策: ドメインモデルにルールを集約する
+ドメインルールはドメインモデル自身に持たせるべきである   
+以下は実際のCircleドメインモデルの実装である
 
 ```go
-// 自動採番を採用した場合のイメージ
-user := &User{
-	userID: "",           // IDがまだない — エンティティとして不完全
-	name:   "山田 太郎",
+// /app/internal/domain/model/circle/circle.go
+
+func (c *Circle) IsFull() bool {
+    return c.CountMembers() >= 30
 }
 
-// DBにINSERTして初めてIDが確定する
-db.Create(user)  // ここでようやく user.userID = 1 になる
+func (c *Circle) Join(member *user.User) error {
+    if member == nil {
+        return fmt.Errorf("member is nil: %s", c.id.String())
+    }
+    if c.IsFull() {
+        return fmt.Errorf("circle is full: %s", c.id.String())
+    }
+    c.members = append(c.members, *member)
+    return nil
+}
 ```
 
-この設計では、永続化前のエンティティは識別子を持たない「不完全なオブジェクト」として存在してしまう
-
-### エンティティの同一性比較ができない
-
-`Equals` メソッドは識別子で同一性を判断するが、永続化前のエンティティはIDが空のため正しく比較できない
+`IsFull()` と `Join()` にルールを集約することで、ユースケースは `circle.Join(member)` を呼ぶだけでよくなる   
+ルールの存在を意識する必要がない
 
 ```go
-func (u *User) Equals(other *User) bool {
-	return reflect.DeepEqual(u.userID, other.userID)
-}
+// /app/internal/application/usecase/circle/join_usecase.go
 
-// 永続化前のエンティティ同士を比較すると…
-user1 := &User{userID: ""}  // IDなし
-user2 := &User{userID: ""}  // IDなし
-user1.Equals(user2) // true — 別のオブジェクトなのに同一と判定されてしまう
+func (u *joinUsecase) Execute(cmd command.JoinCommand) error {
+    // ...（省略: メンバーとサークルの取得処理）
+
+    // ユースケースはドメインルールを意識せず Join を呼ぶだけ
+    if err := circle.Join(member); err != nil {
+        return fmt.Errorf("failed to join circle: %w", err)
+    }
+    return u.circleRepository.Save(circle)
+}
 ```
 
-### ドメインロジックがインフラストラクチャ層に依存する
+仕様変更が入っても `IsFull()` の1箇所を修正するだけで全てのユースケースに反映される
 
-IDを得るためにまず永続化が必要になると、ドメインロジックの実行順序が永続化層に縛られる   
-例えば、生成後すぐにドメインイベントの発行やログ記録でIDを参照したくても、先にDBへ保存しなければならない   
-これはドメイン層がインフラストラクチャ層に依存することを意味し、DDDの依存関係の原則に反する
+## 言葉とコードの齟齬をなくす
 
-### テストが困難になる
-
-自動採番はDBに依存するため、ユニットテストでエンティティを生成するたびにDBアクセスが必要になる   
-テストの実行速度が低下し、DB環境がなければテストできないという制約が生まれる
-
-### 本リポジトリでの解決策
-
-本リポジトリではファクトリー内でUUIDを採番することで、上記の問題を解決している
+### 問題: 30人なのに29?
+「サークルは30人まで入れる」というルールがある   
+サークルにはオーナー1人 + メンバーが存在する   
+もし人数チェックを以下のように書いた場合、コード上に「29」という数字が現れる
 
 ```go
-func (f *userFactory) Create(name, email string) (*user.User, error) {
-	userID := uuid.NewString()  // 永続化に依存せずIDを生成
-	return user.NewUser(userID, name, email)
+// 悪い例: 言葉とコードに齟齬がある
+func (c *Circle) IsFull() bool {
+    // membersにはオーナーが含まれないため29でチェックしている
+    // しかし仕様書の「30人」とコードの「29」に齟齬がある
+    return len(c.members) >= 29
 }
 ```
 
-- インスタンス生成時点で識別子が確定するため、エンティティは常に完全な状態で存在する
-- 永続化前でも `Equals` による同一性比較が正しく動作する
-- ドメインロジックが永続化のタイミングに依存しない
-- DBなしでテスト可能
+「30人まで入れる」というルールに対してコードが `29` で判定しているため、仕様書やドメインエキスパートの言葉とコードの間に齟齬が生まれる   
+この齟齬は後からコードを読む開発者に混乱を与え、バグの原因になりうる
 
-## ファクトリーのインターフェース
-
-ファクトリーのインターフェースはエンティティと同じパッケージに定義する   
-これにより、エンティティの生成方法がドメイン層の中で表現される
+### 解決策: CountMembersメソッドで齟齬を解消する
 
 ```go
-// app/internal/domain/model/user/factory.go
+// /app/internal/domain/model/circle/circle.go
 
-package user
+func (c *Circle) CountMembers() int {
+    // オーナーを含めた人数を返すことで「30人」と一致させる
+    return len(c.members) + 1
+}
 
-type IFactory interface {
-	Create(name, email string) (*User, error)
+func (c *Circle) IsFull() bool {
+    // 「サークルは30人まで」という言葉がそのままコードに現れる
+    return c.CountMembers() >= 30
 }
 ```
 
-ポイント:
-- 引数にはユーザーが入力する値（`name`, `email`）のみを受け取る。識別子（`userID`）は含めない
-- 識別子の生成はファクトリーの実装に委ねることで、呼び出し側はID生成の詳細を知る必要がない
-- 戻り値はドメインモデル（`*User`）を返す
+`CountMembers()` でオーナーを含めた総人数を返すことにより、`IsFull()` の条件が `>= 30` となる   
+ドメインエキスパートの「30人まで」という言葉とコードの数値が一致し、齟齬がなくなる
 
-## ファクトリーの実装
+## 通知オブジェクトによるデータモデル構築
 
-インターフェースの実装はエンティティとは別のパッケージに配置する   
-本リポジトリではUUID生成ライブラリを使用しているため、エンティティパッケージから分離している
+### 課題: 永続化のためにドメインの内部データをどう取得するか
+リポジトリでドメインオブジェクトを永続化する際、内部データをデータモデルに変換する必要がある   
+しかしドメインオブジェクトにgetterを安易に公開すると、集約のルールが外部から破られるリスクがある
+
+### 解決策: 通知パターン
+通知パターンでは以下の3つのコンポーネントで構成される
+
+**1. 通知インタフェース（ドメイン層）**   
+ドメイン層に通知用のインタフェースを定義する   
+これにより、ドメインが「何を通知するか」だけを定義し、「誰に通知するか」は関知しない
 
 ```go
-// app/internal/domain/model/factory/user.go
+// /app/internal/domain/model/circle/notification.go
 
-package factory
-
-import (
-	"github.com/google/uuid"
-	"github.com/shun-ideguchi/golang-ddd/internal/domain/model/user"
-)
-
-type userFactory struct{}
-
-func NewUserFactory() user.IFactory {
-	return &userFactory{}
-}
-
-func (f *userFactory) Create(name, email string) (*user.User, error) {
-	// ID生成が複雑なものと仮定
-	userID := uuid.NewString()
-	return user.NewUser(userID, name, email)
+type CircleNotification interface {
+    ID(CircleID) CircleNotification
+    Name(CircleName) CircleNotification
+    Owner(user.User) CircleNotification
+    Members([]user.User) CircleNotification
 }
 ```
 
-ポイント:
-- `NewUserFactory` の戻り値の型は `user.IFactory`（インターフェース）にする
-- `Create` 内でUUIDを採番し、`user.NewUser` を呼び出す。`NewUser` はバリデーションを行うため、不正な値でのエンティティ生成を防げる
-- ID生成方式を変更したい場合、このファクトリー実装を差し替えるだけで済む
-
-## ファクトリーを使わない場合との比較
-
-↓以下はファクトリーを使わない場合
+**2. ドメインオブジェクトのNotifyメソッド（ドメイン層）**   
+ドメインオブジェクトは通知インタフェースを受け取り、自身の内部データを通知する
 
 ```go
-func (u *createUsecase) Execute(cmd *command.CreateCommand) error {
-	// ユースケースにID生成の知識が漏れ出している
-	userID := uuid.NewString()
-	user, err := user.NewUser(userID, cmd.Name, cmd.Email)
-	if err != nil {
-		return err
-	}
-	// ...
+// /app/internal/domain/model/circle/circle.go
+
+func (c *Circle) Notify(n CircleNotification) {
+    n.ID(c.id).Name(c.name).Owner(c.owner).Members(c.members)
 }
 ```
 
-↓以下はファクトリーを使う場合
+**3. 通知ビルダー（インフラ層）**   
+インフラ層で通知インタフェースを実装し、受け取ったデータからデータモデルを構築する
 
 ```go
-func (u *createUsecase) Execute(cmd *command.CreateCommand) error {
-	// 名前とメールアドレスだけ渡せばよい
-	user, err := u.userFactory.Create(cmd.Name, cmd.Email)
-	if err != nil {
-		return fmt.Errorf("failed to create user entity: %w", err)
-	}
-	// ...
+// /app/internal/infrastructure/persistence/gorm/circle_notification_builder.go
+
+type CircleDataModelBuilder struct {
+    id      circle.CircleID
+    name    circle.CircleName
+    owner   user.User
+    members []user.User
+}
+
+func (b *CircleDataModelBuilder) ID(id circle.CircleID) circle.CircleNotification {
+    b.id = id
+    return b
+}
+
+func (b *CircleDataModelBuilder) Name(name circle.CircleName) circle.CircleNotification {
+    b.name = name
+    return b
+}
+
+func (b *CircleDataModelBuilder) Owner(owner user.User) circle.CircleNotification {
+    b.owner = owner
+    return b
+}
+
+func (b *CircleDataModelBuilder) Members(members []user.User) circle.CircleNotification {
+    b.members = members
+    return b
+}
+
+func (b *CircleDataModelBuilder) Build() *Circle {
+    members := make([]User, len(b.members))
+    for i, member := range b.members {
+        members[i] = User{
+            ID:    member.ID().String(),
+            Name:  member.Name().String(),
+            Email: member.Email().String(),
+        }
+    }
+    return &Circle{
+        ID:      b.id.String(),
+        Name:    b.name.String(),
+        Owner:   b.owner.ID().String(),
+        Members: members,
+    }
 }
 ```
 
-ファクトリーを使うことで、ユースケースは「何を作るか」に集中でき、「どうやって識別子を生成するか」を意識しなくてよくなる
-
-## ユースケースでの利用
-
-ユースケース層ではファクトリーをインターフェース経由で受け取り、エンティティの生成に使用する
+### リポジトリでの使用例
+リポジトリではビルダーを生成し、ドメインオブジェクトにNotifyで通知を依頼するだけでデータモデルが構築できる
 
 ```go
-// app/internal/application/usecase/user/create_usecase.go
+// /app/internal/infrastructure/persistence/gorm/circle.go
 
-package user
+func (p *circlePersistence) Save(circle *circle.Circle) error {
+    builder := &CircleDataModelBuilder{}
+    circle.Notify(builder) // ← domainに「中身教えて」と依頼
+    m := builder.Build()   // ← DBモデルに変換
 
-type createUsecase struct {
-	userFactory    user.IFactory
-	userRepository repository.IUserRepository
-	userService    service.UserService
-}
-
-func NewCreateUsecase(
-	userFactory user.IFactory,
-	userRepository repository.IUserRepository,
-	userService service.UserService,
-) *createUsecase {
-	return &createUsecase{
-		userFactory:    userFactory,
-		userRepository: userRepository,
-		userService:    userService,
-	}
-}
-
-func (u *createUsecase) Execute(cmd *command.CreateCommand) error {
-	// ファクトリーでエンティティを生成
-	user, err := u.userFactory.Create(cmd.Name, cmd.Email)
-	if err != nil {
-		return fmt.Errorf("failed to create user entity: %w", err)
-	}
-
-	// ドメインサービスで重複チェック
-	if u.userService.IsExists(user) {
-		return fmt.Errorf("duplicate user: %s", cmd.Name)
-	}
-
-	// リポジトリで永続化
-	return u.userRepository.Save(user)
+    fmt.Println(m)
+    return nil
 }
 ```
 
-ユースケースはコマンド（`CreateCommand`）を受け取り、以下の流れで処理する
-1. ファクトリーでエンティティを生成
-2. ドメインサービスで重複チェック
-3. リポジトリで永続化
-
-### コマンドオブジェクト
-
-ユースケースへの入力値はコマンドオブジェクトとして定義する   
-プレゼンテーション層からの入力をユースケースの引数として整理する役割を持つ
-
-```go
-// app/internal/application/usecase/user/command/create_command.go
-
-package command
-
-type CreateCommand struct {
-	UserID string
-	Name   string
-	Email  string
-}
-
-func NewCreateCommand(name, email string) *CreateCommand {
-	return &CreateCommand{
-		Name:  name,
-		Email: email,
-	}
-}
-```
-
-`NewCreateCommand` では `Name` と `Email` のみ受け取る。`UserID` はファクトリーが生成するため、コマンド生成時には不要である
-
-## 依存関係の流れ
-
-```
-ドメイン層（domain）
-┌──────────────────────────────────────────────┐
-│                                              │
-│  user パッケージ        factory パッケージ     │
-│  ┌────────────────┐    ┌──────────────────┐  │
-│  │ User           │    │ userFactory      │  │
-│  │ IFactory       │◄───│ （IFactory 実装） │  │
-│  │ NewUser()      │    │ uuid.NewString() │  │
-│  └────────────────┘    └──────────────────┘  │
-│          ▲                      ▲            │
-└──────────┼──────────────────────┼────────────┘
-           │                      │
-           │ 利用                  │ 注入
-           │                      │
-┌──────────┼──────────────────────┼─────────────┐
-│  アプリケーション層（application）              │
-│  ┌──────────────────────────────────────────┐ │
-│  │ createUsecase                            │ │
-│  │  - userFactory.Create(name, email)       │ │
-│  └──────────────────────────────────────────┘ │
-└───────────────────────────────────────────────┘
-```
-
-- ファクトリーのインターフェース（`IFactory`）はエンティティと同じ `user` パッケージに定義
-- ファクトリーの実装（`userFactory`）は別パッケージ `factory` に配置し、UUID生成の依存を分離
-- ユースケースはインターフェースに対してプログラムするため、ID生成方式を差し替え可能
-
-## 利用例
-
-```go
-// app/cmd/api/main.go
-
-func main() {
-	userRepository := persistence.NewUserPersistence()
-	userService := service.NewUserService(userRepository)
-	userFactory := factory.NewUserFactory()
-	userCreateUsecase := user.NewCreateUsecase(userFactory, userRepository, *userService)
-
-	// コマンドを作成してユースケースを実行
-	createCommand := command.NewCreateCommand("test name", "test@test.com")
-	if err := userCreateUsecase.Execute(createCommand); err != nil {
-		fmt.Println(err.Error())
-	}
-}
-```
-
-`main.go` でファクトリーの具体的な実装を生成し、インターフェース経由でユースケースに注入する   
-テスト時にはUUIDではなく固定値を返すモックファクトリーに差し替えることで、再現性のあるテストが可能になる
-
-## 起動方法
-
-```bash
-docker compose up --build
-```
-
-コンテナ内で以下を実行する。
-
-```bash
-go run ./cmd/api/
-```
+この通知パターンにより以下のメリットがある
+- ドメインオブジェクトが永続化用のデータモデルの存在を知らなくてよい
+- ドメインオブジェクトにgetterを公開する必要がない（集約のルールが守られる）
+- インフラ層の変更（DB変更など）がドメイン層に影響しない
 
 ## サンプルコード
-
-| 種類 | パス |
-|------|------|
-| ファクトリー（インターフェース） | `/app/internal/domain/model/user/factory.go` |
-| ファクトリー（実装） | `/app/internal/domain/model/factory/user.go` |
-| ユースケース | `/app/internal/application/usecase/user/create_usecase.go` |
-| コマンド | `/app/internal/application/usecase/user/command/create_command.go` |
-| エンティティ | `/app/internal/domain/model/user/user.go` |
-| 実行サンプル | `/app/cmd/api/main.go` |
+ドメインモデル → /app/internal/domain/model/*   
+ユースケース → /app/internal/application/usecase/*   
+リポジトリ → /app/internal/infrastructure/persistence/gorm/*   
+実行サンプル → /app/cmd/api/main.go

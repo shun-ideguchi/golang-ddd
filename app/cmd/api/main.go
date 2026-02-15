@@ -7,12 +7,12 @@ import (
 	"github.com/shun-ideguchi/golang-ddd/internal/application/usecase/user/command"
 	"github.com/shun-ideguchi/golang-ddd/internal/domain/model/factory"
 	"github.com/shun-ideguchi/golang-ddd/internal/domain/service"
-	"github.com/shun-ideguchi/golang-ddd/internal/infrastructure/persistence"
+	"github.com/shun-ideguchi/golang-ddd/internal/infrastructure/persistence/gorm"
 )
 
 func main() {
 	msg := "success"
-	userRepository := persistence.NewUserPersistence()
+	userRepository := gorm.NewUserPersistence()
 	userService := service.NewUserService(userRepository)
 	userFactory := factory.NewUserFactory()
 	userCreateUsecase := user.NewCreateUsecase(userFactory, userRepository, *userService)

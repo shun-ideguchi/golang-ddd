@@ -39,6 +39,10 @@ func ReNewUser(ID, name, email string) *User {
 	}
 }
 
+func (u *User) Notify(n UserNotification) {
+	n.ID(u.userID).Name(u.name).Email(u.email)
+}
+
 func (u *User) ChangeName(name Name) {
 	u.name = name
 }
