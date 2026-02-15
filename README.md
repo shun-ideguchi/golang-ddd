@@ -6,3 +6,5 @@
 - feature/service      → ドメインサービス
 - feature/repository   → リポジトリ
 - feature/usecase      → アプリケーションサービス
+- feature/factory      → 生成処理を専門に担うドメインオブジェクト
+- feature/application_flow → 集約など
